@@ -1,0 +1,39 @@
+name: Live Score Stream
+
+# Manual trigger: fill in the Cricbuzz URL + match title, then Run workflow.
+# The stream runs up to ~5h45m (GitHub's 6-hour job limit), then stops cleanly.
+# For a full Test day, just run it again for the next session.
+on:
+  workflow_dispatch:
+    inputs:
+      cricbuzz_url:
+        description: "Cricbuzz live-scores page URL"
+        required: true
+      match_title:
+        description: "(Optional now — auto-detected from Cricbuzz)"
+        required: false
+        default: ""
+      subtitle:
+        description: "(Optional now — auto-detected from Cricbuzz)"
+        required: false
+        default: ""
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python deps
+        run: pip install requests pillow edge-tts
+
+      - name: Stream to YouTube
+        # Secret YT_RTMP must be the FULL url: rtmp://a.rtmp.youtube.com/live2/YOUR_KEY
+        run: >
+          python stream_anim.py
+          --cricbuzz-url "${{ inputs.cricbuzz_url }}"
+          --rtmp "${{ secrets.YT_RTMP }}"
