@@ -433,7 +433,7 @@ def draw_banner(d, F, txt, col, alpha):
 FIELDERS = [(430, 425), (540, 630), (320, 640), (770, 425), (660, 645), (300, 400)]
 
 def render_field(F, frame_no, ball_anim, bat_col, bowl_col, bat_code="IND",
-                 bowl_code="WI", excite=0.0):
+                 bowl_code="WI", excite=0.0, banner=True):
     img = build_scene() if _SCENE is None else _SCENE.copy()
     d = ImageDraw.Draw(img)
     draw_crowd(d, frame_no, excite + (ball_anim.crowd_excite() if ball_anim else 0))
@@ -486,7 +486,7 @@ def render_field(F, frame_no, ball_anim, bat_col, bowl_col, bat_code="IND",
                 ball_anim.trail.pop(0)
             draw_ball(d, pos, ball_anim.trail[:-1])
         b = ball_anim.banner()
-        if b:
+        if b and banner:
             draw_banner(d, F, b[0], b[1], b[2])
     return img
 

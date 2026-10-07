@@ -31,10 +31,22 @@ import threading
 import time
 
 from scoreboard_v2 import fetch_rich
-from anim_match import W, H, FPS, load_fonts, render_anim_frame
+from anim_match import W as ANIM_W, H as ANIM_H, FPS as ANIM_FPS, \
+    load_fonts, render_anim_frame
 from commentary import Commentator, SAMPLE_RATE
+from combined_renderer import CombinedRenderer
 
 REFRESH_SEC = 20
+
+# renderer profiles: classic = 1280x720@10fps field+panel;
+# combined = 1920x1080@30fps animated field + TV scoreboard overlay
+# (animation still ticks at 10fps; each unique frame repeats 3x).
+RENDERERS = {
+    "classic": {"w": ANIM_W, "h": ANIM_H, "fps": ANIM_FPS, "repeat": 1,
+                "preset": "veryfast"},
+    "combined": {"w": 1920, "h": 1080, "fps": 30, "repeat": 3,
+                 "preset": "ultrafast"},
+}
 
 
 def _audio_pump(audio_out, comm):
@@ -70,13 +82,15 @@ def _audio_pump(audio_out, comm):
             next_t = time.time()  # don't spiral after a stall
 
 
-def _run_session(args, F, holder, comm, t_start):
+def _run_session(args, F, holder, comm, t_start, prof, combined):
     """Run one ffmpeg session. Returns 'done' (duration reached) or 'died'."""
+    W, H, FPS = prof["w"], prof["h"], prof["fps"]
+    repeat = prof["repeat"]
     if args.test_out:
         cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning",
                "-f", "rawvideo", "-pix_fmt", "rgb24",
                "-s", f"{W}x{H}", "-framerate", str(FPS), "-i", "-",
-               "-c:v", "libx264", "-preset", "veryfast",
+               "-c:v", "libx264", "-preset", prof["preset"],
                "-pix_fmt", "yuv420p", "-t", str(args.duration),
                "-y", args.test_out]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -99,7 +113,7 @@ def _run_session(args, F, holder, comm, t_start):
                ("[1:a][2:a]amix=inputs=2:duration=first:"
                 "dropout_transition=0:normalize=0[aout]"),
                "-map", "0:v", "-map", "[aout]",
-               "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+               "-c:v", "libx264", "-preset", prof["preset"], "-tune", "zerolatency",
                "-b:v", "2500k", "-maxrate", "3000k", "-bufsize", "6000k",
                "-pix_fmt", "yuv420p", "-g", "20",
                "-c:a", "aac", "-b:a", "128k", "-ar", str(SAMPLE_RATE),
@@ -114,6 +128,7 @@ def _run_session(args, F, holder, comm, t_start):
     frame_dt = 1.0 / FPS
     sess_frames = 0
     sess_t0 = time.time()
+    last_raw = None
     try:
         while True:
             now = time.time()
@@ -133,9 +148,15 @@ def _run_session(args, F, holder, comm, t_start):
                               f"{st['wkts']} ({st['overs']})", flush=True)
                 except Exception as e:
                     print(f"fetch failed: {e}", flush=True)
-            img = render_anim_frame(holder["state"], F, holder["frames"])
+            af = holder["frames"] // repeat  # 10fps animation tick
+            if combined is not None:
+                if holder["frames"] % repeat == 0 or last_raw is None:
+                    last_raw = combined.render(holder["state"], af).tobytes()
+                raw = last_raw
+            else:
+                raw = render_anim_frame(holder["state"], F, af).tobytes()
             try:
-                proc.stdin.write(img.tobytes())
+                proc.stdin.write(raw)
             except (BrokenPipeError, ValueError):
                 print("ffmpeg pipe closed", flush=True)
                 return "died"
@@ -175,6 +196,10 @@ def main():
     ap.add_argument("--test-out", default="")
     ap.add_argument("--duration", type=int, default=20700,
                     help="max stream seconds (default 5h45m, under the 6h Actions limit)")
+    ap.add_argument("--renderer", choices=["classic", "combined"],
+                    default="combined",
+                    help="classic=1280x720@10fps field+panel, "
+                         "combined=1920x1080@30fps animated field + TV overlay")
     args = ap.parse_args()
 
     if not args.test_out and not args.rtmp:
@@ -200,6 +225,11 @@ def main():
         comm = Commentator(args.cricbuzz_url)
         comm.start()
 
+    prof = RENDERERS[args.renderer]
+    combined = CombinedRenderer(F) if args.renderer == "combined" else None
+    print(f"renderer={args.renderer} {prof['w']}x{prof['h']}@{prof['fps']}",
+          flush=True)
+
     t_start = time.time()
     quick_fail = 0
     while True:
@@ -207,7 +237,7 @@ def main():
             print("duration reached, stopping", flush=True)
             break
         sess_start = time.time()
-        result = _run_session(args, F, holder, comm, t_start)
+        result = _run_session(args, F, holder, comm, t_start, prof, combined)
         if result == "done":
             break
         # ffmpeg session died -> reconnect with backoff
