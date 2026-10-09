@@ -1,0 +1,38 @@
+name: CPT Scoreboard Stream
+
+# Cricket Pulse TV automated scoreboard — manual trigger with Cricbuzz URL.
+# Streams to the "Scoreboard" stream key (CPT_SCOREBOARD_RTMP secret).
+# Runs up to ~5h45m (GitHub's 6-hour job limit), then stops cleanly.
+on:
+  workflow_dispatch:
+    inputs:
+      cricbuzz_url:
+        description: "Cricbuzz live-scores page URL"
+        required: true
+      match_title:
+        description: "(Optional — auto-detected from Cricbuzz)"
+        required: false
+        default: ""
+      subtitle:
+        description: "(Optional — auto-detected from Cricbuzz)"
+        required: false
+        default: ""
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python deps
+        run: pip install requests pillow edge-tts
+
+      - name: Stream to YouTube (Cricket Pulse TV)
+        run: >
+          python stream_anim.py
+          --cricbuzz-url "${{ inputs.cricbuzz_url }}"
+          --rtmp "${{ secrets.CPT_SCOREBOARD_RTMP }}"
