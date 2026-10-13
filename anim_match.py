@@ -50,6 +50,57 @@ TEAM_NAMES = {
     "IRE": "IRELAND",
 }
 
+# Cricbuzz sometimes reports South Africa as RSA instead of SA.
+_CODE_CANON = {"RSA": "SA"}
+
+
+def title_team_codes(match_title):
+    """Team codes named in a match title, in order of appearance.
+
+    Matches short codes on word boundaries (so 'SL' can't hit 'ISLAMABAD'
+    and 'WI' can't hit a stray word fragment) or full team names.
+    Returns [] when the title names no known team. Never raises.
+    """
+    mt = (match_title or "").upper()
+    hits, seen = [], set()
+    for code, full in TEAM_NAMES.items():
+        canon = _CODE_CANON.get(code, code)
+        if canon in seen:
+            continue
+        m = re.search(r"\b%s\b" % re.escape(canon), mt)
+        if m:
+            pos = m.start()
+        elif full.upper() in mt:
+            pos = mt.find(full.upper())
+        else:
+            continue
+        seen.add(canon)
+        hits.append((pos, canon))
+    hits.sort()
+    return [c for _, c in hits]
+
+
+def resolve_teams(st):
+    """Resolve (batting_team, bowling_team) codes from a live state dict.
+
+    Prefers the live Cricbuzz parse; falls back to teams named in the match
+    title. Never returns hardcoded placeholder literals like 'IND'/'OPP':
+    unknown teams come back as '' so renderers show neutral TBD/blank
+    labels instead of a wrong team on air.
+    """
+    st = st or {}
+    title_codes = title_team_codes(st.get("match_title"))
+    raw = (st.get("team") or "").upper()
+    bat = _CODE_CANON.get(raw, raw)
+    if bat not in TEAM_COLORS:
+        bat = title_codes[0] if title_codes else ""
+    bowl = ""
+    for code in title_codes:
+        if code != bat:
+            bowl = code
+            break
+    return bat, bowl
+
 # ---------------- geometry (field coordinates) ----------------
 PITCH_Y = 520            # vertical centre of the pitch strip
 PITCH_TOP, PITCH_BOT = 478, 562
@@ -432,8 +483,8 @@ def draw_banner(d, F, txt, col, alpha):
 # ---------------- per-frame field renderer ----------------
 FIELDERS = [(430, 425), (540, 630), (320, 640), (770, 425), (660, 645), (300, 400)]
 
-def render_field(F, frame_no, ball_anim, bat_col, bowl_col, bat_code="IND",
-                 bowl_code="WI", excite=0.0, banner=True):
+def render_field(F, frame_no, ball_anim, bat_col, bowl_col, bat_code="",
+                 bowl_code="", excite=0.0, banner=True):
     img = build_scene() if _SCENE is None else _SCENE.copy()
     d = ImageDraw.Draw(img)
     draw_crowd(d, frame_no, excite + (ball_anim.crowd_excite() if ball_anim else 0))
@@ -696,15 +747,10 @@ class MatchAnimator:
             self.current = BallAnim(self.queue.pop(0))
         if self.current and not self.current.done:
             self.current.step()
-        team = st.get("team") or "IND"
+        team, bowl_code = resolve_teams(st)
         # batting team color vs bowling team color (dynamic per match)
-        bat_col = TEAM_COLORS.get(team, (30, 90, 200))
-        mt = (st.get("match_title") or "")
-        bowl_col, bowl_code = (140, 30, 40), "OPP"
-        for code, col in TEAM_COLORS.items():
-            if code != team and code in mt.upper():
-                bowl_col, bowl_code = col, code
-                break
+        bat_col = TEAM_COLORS.get(team, NAVY2)
+        bowl_col = TEAM_COLORS.get(bowl_code, NAVY2)
         img = Image.new("RGB", (W, H), NAVY)
         field = render_field(F, frame_no, self.current, bat_col, bowl_col,
                              bat_code=team, bowl_code=bowl_code)

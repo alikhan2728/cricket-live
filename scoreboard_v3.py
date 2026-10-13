@@ -310,10 +310,12 @@ def draw_top_bar(d, fonts, state):
         f_ev = _fit_font(event, "DejaVuSans-Bold", 92, 560)
         d.text((960, 75), event, font=f_ev, anchor="mm", fill=efg)
     else:
-        f_ev = _fit_font("PAKISTAN vs SRI LANKA", "DejaVuSans-Bold", 44, 660)
-        d.text((960, 62), "PAKISTAN vs SRI LANKA", font=f_ev,
+        banner_title = str(state.get("banner_title") or "LIVE CRICKET")
+        banner_sub = str(state.get("banner_sub") or "LIVE")
+        f_ev = _fit_font(banner_title, "DejaVuSans-Bold", 44, 660)
+        d.text((960, 62), banner_title, font=f_ev,
                anchor="mm", fill=GOLD)
-        d.text((960, 112), "2nd T20I  •  LIVE", font=fonts["tiny"],
+        d.text((960, 112), banner_sub, font=fonts["tiny"],
                anchor="mm", fill=MUTED)
 
     # RIGHT: bowling team panel (1320..1920)

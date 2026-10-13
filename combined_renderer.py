@@ -18,16 +18,13 @@ from PIL import Image, ImageDraw
 
 import anim_match
 from anim_match import MatchAnimator, BallAnim, PH_OUTCOME
-import scoreboard_v3 as scoreboard_tv
+import scoreboard_tv
 
 OUT_W, OUT_H = 1920, 1080
 # field (900x720) is cropped to the visible band, then scaled straight to
 # 1920x1080. Band keeps six-apex (~y130) and pitch action visible. Tunable.
 FIELD_CROP_TOP_ORIG = 95
 FIELD_CROP_H_ORIG = 506  # 1080 / (1920/900)
-
-TEAM_CODES = ("PAK", "IND", "AUS", "ENG", "NZ", "SA", "SL", "BAN", "AFG",
-              "WI", "ZIM", "IRE")
 
 
 def tv_state_from_live(st, event=""):
@@ -46,13 +43,7 @@ def tv_state_from_live(st, event=""):
     bowler = {"name": bw.get("name", "Bowler"), "overs": str(bw.get("o", "0")),
               "maidens": bw.get("m", 0), "runs": bw.get("r", 0),
               "wkts": bw.get("w", 0)}
-    team = (st.get("team") or "IND").upper()
-    mt = (st.get("match_title") or "").upper()
-    bowl_team = "OPP"
-    for code in TEAM_CODES:
-        if code != team and code in mt:
-            bowl_team = code
-            break
+    team, bowl_team = anim_match.resolve_teams(st)
     return {
         "batting_team": team, "bowling_team": bowl_team,
         "score": st.get("runs", 0), "wickets": st.get("wkts", 0),
@@ -79,14 +70,9 @@ class CombinedRenderer:
             a.current = BallAnim(a.queue.pop(0))
         if a.current and not a.current.done:
             a.current.step()
-        team = (st.get("team") or "IND").upper()
-        bat_col = anim_match.TEAM_COLORS.get(team, (30, 90, 200))
-        mt = (st.get("match_title") or "")
-        bowl_col, bowl_code = (140, 30, 40), "OPP"
-        for code, col in anim_match.TEAM_COLORS.items():
-            if code != team and code in mt.upper():
-                bowl_col, bowl_code = col, code
-                break
+        team, bowl_code = anim_match.resolve_teams(st)
+        bat_col = anim_match.TEAM_COLORS.get(team, anim_match.NAVY2)
+        bowl_col = anim_match.TEAM_COLORS.get(bowl_code, anim_match.NAVY2)
         field = anim_match.render_field(a.F, frame_no, a.current, bat_col,
                                         bowl_col, bat_code=team,
                                         bowl_code=bowl_code, banner=False)
@@ -111,6 +97,13 @@ class CombinedRenderer:
         fonts = self._tv_fonts
         scoreboard_tv.draw_top_bar(od, fonts, tv)
         scoreboard_tv.draw_info_strip(od, fonts, tv)
-        scoreboard_tv.draw_ball_strip(od, fonts, tv)
-        scoreboard_tv.draw_player_cards(od, fonts, tv, base_img=ov)
+        scoreboard_tv.draw_event_banner(od, fonts, tv)
+        # ball strip on a translucent backing bar
+        od.rounded_rectangle([40, 780, 1880, 876], radius=18,
+                             fill=(10, 14, 28, 205),
+                             outline=(70, 78, 100), width=2)
+        scoreboard_tv.draw_ball_strip(od, fonts, tv, y=794)
+        # player cards, translucent
+        scoreboard_tv.draw_player_cards(od, fonts, tv, y0=888,
+                                        body_fill=(24, 30, 50, 215))
         return Image.alpha_composite(bg, ov).convert("RGB")
