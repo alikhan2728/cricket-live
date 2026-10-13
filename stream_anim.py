@@ -34,7 +34,7 @@ from scoreboard_v2 import fetch_rich
 from anim_match import W as ANIM_W, H as ANIM_H, FPS as ANIM_FPS, \
     load_fonts, render_anim_frame
 from commentary import Commentator, SAMPLE_RATE
-from combined_renderer import CombinedRenderer
+from combined_renderer_v3 import CombinedRenderer
 
 REFRESH_SEC = 20
 
