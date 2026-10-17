@@ -35,6 +35,7 @@ from anim_match import W as ANIM_W, H as ANIM_H, FPS as ANIM_FPS, \
     load_fonts, render_anim_frame
 from commentary import Commentator, SAMPLE_RATE
 from combined_renderer_v3 import CombinedRenderer
+from combined_renderer_cp import CleanRenderer
 
 REFRESH_SEC = 20
 
@@ -46,6 +47,8 @@ RENDERERS = {
                 "preset": "veryfast"},
     "combined": {"w": 1920, "h": 1080, "fps": 30, "repeat": 3,
                  "preset": "ultrafast"},
+    "clean": {"w": 1920, "h": 1080, "fps": 30, "repeat": 3,
+              "preset": "ultrafast"},
 }
 
 
@@ -196,8 +199,8 @@ def main():
     ap.add_argument("--test-out", default="")
     ap.add_argument("--duration", type=int, default=20700,
                     help="max stream seconds (default 5h45m, under the 6h Actions limit)")
-    ap.add_argument("--renderer", choices=["classic", "combined"],
-                    default="combined",
+    ap.add_argument("--renderer", choices=["classic", "combined", "clean"],
+                    default="clean",
                     help="classic=1280x720@10fps field+panel, "
                          "combined=1920x1080@30fps animated field + TV overlay")
     args = ap.parse_args()
@@ -226,7 +229,12 @@ def main():
         comm.start()
 
     prof = RENDERERS[args.renderer]
-    combined = CombinedRenderer(F) if args.renderer == "combined" else None
+    if args.renderer == "combined":
+        combined = CombinedRenderer(F)
+    elif args.renderer == "clean":
+        combined = CleanRenderer(F)
+    else:
+        combined = None
     print(f"renderer={args.renderer} {prof['w']}x{prof['h']}@{prof['fps']}",
           flush=True)
 
