@@ -60,8 +60,12 @@ def tv_state_from_live(st, event=""):
         "overs": str(st.get("overs", "0")), "opp_score": "",
         "balls": st.get("recent_overs") or [],
         "batsmen": batsmen, "bowler": bowler,
-        "crr": st.get("crr", ""), "rrr": "",
+        "crr": st.get("crr", ""), "rrr": st.get("rrr", ""),
+        "innings_target": st.get("innings_target"),
         "target_text": st.get("status", ""), "reviews": "",
+        "partnership": st.get("partnership"),
+        "last_wicket": st.get("last_wicket"),
+        "next_batsman": st.get("next_batsman", ""),
         "banner_title": banner_title, "banner_sub": "LIVE",
         "event": event,
     }

@@ -445,6 +445,10 @@ def _avatar_img(team, role):
         ("PAK", "bowl"): "pak_bowler.webp",
         ("SL", "bat"): "sl_batsman.webp",
         ("SL", "bowl"): "sl_bowler.webp",
+        ("IND", "bat"): "ind_batsman.webp",
+        ("IND", "bowl"): "ind_bowler.webp",
+        ("WI", "bat"): "wi_batsman.webp",
+        ("WI", "bowl"): "wi_bowler.webp",
     }.get(key)
     img = None
     if fname:
