@@ -284,45 +284,51 @@ def draw_top_bar(d, fonts, state):
     bowl_bg, bowl_fg = team_colors(bowl)
     score_txt = f"{state.get('score', 0)}/{state.get('wickets', 0)}"
     overs = str(state.get("overs", "0"))
-    bar_h = 150
+    bar_h = 170  # taller for CRR line
 
-    # LEFT: batting team panel (0..600)
-    d.rectangle([0, 0, 600, bar_h], fill=bat_bg)
+    # LEFT: batting team panel (0..620) — flag + BIG score in red box (Cricket Point style)
+    d.rectangle([0, 0, 620, bar_h], fill=bat_bg)
     draw_flag(d, [18, 28, 118, 122], bat)
-    f_code = _fit_font(bat, "DejaVuSans-Bold", 46, 180)
-    d.text((140, 34), bat, font=f_code, anchor="lm", fill=bat_fg)
-    f_score = _fit_font(score_txt, "DejaVuSans-Bold", 78, 430)
+    f_code = _fit_font(bat, "DejaVuSans-Bold", 44, 170)
+    d.text((140, 32), bat, font=f_code, anchor="lm", fill=bat_fg)
+    # red score box
+    f_score = _fit_font(score_txt, "DejaVuSans-Bold", 84, 380)
     sw = d.textlength(score_txt, font=f_score)
-    d.text((140, 96), score_txt, font=f_score, anchor="lm", fill=bat_fg)
-    d.text((140 + sw + 16, 128), f"({overs})", font=fonts["overs"],
+    _rr(d, [140, 58, 140 + sw + 36, 132], 10, RED)
+    d.text((140 + 18, 95), score_txt, font=f_score, anchor="lm", fill=WHITE)
+    d.text((140 + sw + 56, 120), f"{overs}", font=fonts["overs"],
            anchor="lm", fill=bat_fg)
+    # CRR under score
+    if state.get("crr") not in (None, ""):
+        d.text((140, 152), f"CRR: {state['crr']}", font=fonts["sm"],
+               anchor="lm", fill=GOLD)
 
-    # CENTER: event banner (600..1320)
-    d.rectangle([600, 0, 1320, bar_h], fill=DARK)
-    d.rectangle([600, 0, 1320, bar_h], outline=(70, 78, 100), width=2)
+    # CENTER: event banner (620..1300)
+    d.rectangle([620, 0, 1300, bar_h], fill=DARK)
+    d.rectangle([620, 0, 1300, bar_h], outline=(70, 78, 100), width=2)
     event = str(state.get("event") or "").strip().upper()
     if event:
         if "WICKET" in event:
             ebg, efg = RED, WHITE
         else:
             ebg, efg = DARK, GOLD
-        _rr(d, [640, 22, 1280, 128], 22, ebg, outline=GOLD, width=3)
-        f_ev = _fit_font(event, "DejaVuSans-Bold", 92, 560)
-        d.text((960, 75), event, font=f_ev, anchor="mm", fill=efg)
+        _rr(d, [660, 26, 1260, 144], 22, ebg, outline=GOLD, width=3)
+        f_ev = _fit_font(event, "DejaVuSans-Bold", 96, 520)
+        d.text((960, 85), event, font=f_ev, anchor="mm", fill=efg)
     else:
         banner_title = str(state.get("banner_title") or "LIVE CRICKET")
         banner_sub = str(state.get("banner_sub") or "LIVE")
-        f_ev = _fit_font(banner_title, "DejaVuSans-Bold", 44, 660)
-        d.text((960, 62), banner_title, font=f_ev,
+        f_ev = _fit_font(banner_title, "DejaVuSans-Bold", 44, 620)
+        d.text((960, 70), banner_title, font=f_ev,
                anchor="mm", fill=GOLD)
-        d.text((960, 112), banner_sub, font=fonts["tiny"],
+        d.text((960, 122), banner_sub, font=fonts["tiny"],
                anchor="mm", fill=MUTED)
 
-    # RIGHT: bowling team panel (1320..1920)
-    d.rectangle([1320, 0, 1920, bar_h], fill=bowl_bg)
-    f_name = _fit_font(team_full(bowl), "DejaVuSans-Bold", 40, 380)
+    # RIGHT: bowling team panel (1300..1920) — BIG score in red box
+    d.rectangle([1300, 0, 1920, bar_h], fill=bowl_bg)
+    f_name = _fit_font(team_full(bowl), "DejaVuSans-Bold", 40, 360)
     tw = d.textlength(team_full(bowl), font=f_name)
-    d.text((1902 - 118 - 16 - tw, 26), team_full(bowl), font=f_name,
+    d.text((1902 - 118 - 16 - tw, 28), team_full(bowl), font=f_name,
            anchor="lm", fill=bowl_fg)
     opp = str(state.get("opp_score") or "")
     if state.get("innings_target"):
@@ -330,19 +336,20 @@ def draw_top_bar(d, fonts, state):
         line2 = f"TARGET: {state['innings_target']}"
     else:
         line1, line2 = opp, "BOWLING"
-    f_s = _fit_font(line1, "DejaVuSans-Bold", 56, 420)
+    f_s = _fit_font(line1, "DejaVuSans-Bold", 64, 380)
     w1 = d.textlength(line1, font=f_s)
-    d.text((1902 - 118 - 16 - w1, 92), line1, font=f_s, anchor="lm", fill=bowl_fg)
-    f_t = _fit_font(line2, "DejaVuSans-Bold", 34, 420)
+    _rr(d, [1902 - 118 - 16 - w1 - 18, 58, 1902 - 118 - 16 + 18, 132], 10, RED)
+    d.text((1902 - 118 - 16 - w1, 95), line1, font=f_s, anchor="lm", fill=WHITE)
+    f_t = _fit_font(line2, "DejaVuSans-Bold", 34, 380)
     w2 = d.textlength(line2, font=f_t)
-    d.text((1902 - 118 - 16 - w2, 132), line2, font=f_t, anchor="lm", fill=GOLD)
+    d.text((1902 - 118 - 16 - w2, 152), line2, font=f_t, anchor="lm", fill=GOLD)
     draw_flag(d, [1802, 28, 1902, 122], bowl)
 
 
 # ---------------- info strip ----------------
 
 def draw_info_strip(d, fonts, state):
-    y0, y1 = 150, 210
+    y0, y1 = 170, 230
     d.rectangle([0, y0, W, y1], fill=(12, 42, 125))
     d.line([(0, y1), (W, y1)], fill=GOLD, width=3)
     parts = []
@@ -363,7 +370,7 @@ def draw_info_strip(d, fonts, state):
 # ---------------- ball strip ----------------
 
 def draw_ball_strip(d, fonts, state):
-    y0, y1 = 210, 305
+    y0, y1 = 230, 325
     d.rectangle([0, y0, W, y1], fill=DARK)
     d.line([(0, y1), (W, y1)], fill=(70, 78, 100), width=2)
     bat = team_code(state.get("batting_team"))
