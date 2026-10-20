@@ -30,11 +30,31 @@ _FIELD_BG = None
 
 
 def clean_field():
-    """Static clean 2D cricket ground, Cricket Point style."""
+    """Static clean 2D cricket ground, Cricket Point style.
+
+    If a custom background photo (bg_custom.jpg next to this file) exists,
+    it is used as the full-frame background instead (cover-fit, center-crop).
+    """
     global _FIELD_BG
     if _FIELD_BG is not None:
         return _FIELD_BG.copy()
     W, H = OUT_W, OUT_H
+    import os
+    custom = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "bg_custom.jpg")
+    if os.path.exists(custom):
+        try:
+            im = Image.open(custom).convert("RGB")
+            scale = max(W / im.width, H / im.height)
+            nw, nh = int(im.width * scale + 0.5), int(im.height * scale + 0.5)
+            im = im.resize((nw, nh), Image.LANCZOS)
+            x0 = (nw - W) // 2
+            y0 = (nh - H) // 2
+            im = im.crop((x0, y0, x0 + W, y0 + H))
+            _FIELD_BG = im
+            return im.copy()
+        except Exception:
+            pass
     img = Image.new("RGB", (W, H))
     d = ImageDraw.Draw(img)
     # outfield: rich green gradient
