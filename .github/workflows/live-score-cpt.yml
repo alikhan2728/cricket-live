@@ -43,4 +43,4 @@ jobs:
           if [ "${{ inputs.key_choice }}" = "second" ]; then RTMP="$RTMP_2"; else RTMP="$RTMP_MAIN"; fi;
           python stream_anim.py
           --cricbuzz-url "${{ inputs.cricbuzz_url }}"
-          --rtmp "$RTMP"
+          --rtmp "$RTMP" --renderer testv
