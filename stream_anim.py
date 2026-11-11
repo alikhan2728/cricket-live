@@ -36,6 +36,7 @@ from anim_match import W as ANIM_W, H as ANIM_H, FPS as ANIM_FPS, \
 from commentary import Commentator, SAMPLE_RATE
 from combined_renderer_v3 import CombinedRenderer
 from combined_renderer_cp import CleanRenderer
+from scoreboard_testv import TestRenderer
 
 REFRESH_SEC = 20
 
@@ -48,6 +49,8 @@ RENDERERS = {
     "combined": {"w": 1920, "h": 1080, "fps": 30, "repeat": 3,
                  "preset": "ultrafast"},
     "clean": {"w": 1920, "h": 1080, "fps": 30, "repeat": 3,
+              "preset": "ultrafast"},
+    "testv": {"w": 1920, "h": 1080, "fps": 30, "repeat": 3,
               "preset": "ultrafast"},
 }
 
@@ -145,6 +148,11 @@ def _run_session(args, F, holder, comm, t_start, prof, combined):
                 try:
                     upd = fetch_rich(args.cricbuzz_url)
                     if upd.get("runs"):
+                        if combined is not None and hasattr(combined, "enrich"):
+                            try:
+                                combined.enrich(upd, args.cricbuzz_url)
+                            except Exception as ee:
+                                print(f"enrich failed: {ee}", flush=True)
                         holder["state"] = upd
                         st = holder["state"]
                         print(f"score updated: {st['team']} {st['runs']}/"
@@ -199,7 +207,8 @@ def main():
     ap.add_argument("--test-out", default="")
     ap.add_argument("--duration", type=int, default=20700,
                     help="max stream seconds (default 5h45m, under the 6h Actions limit)")
-    ap.add_argument("--renderer", choices=["classic", "combined", "clean"],
+    ap.add_argument("--renderer",
+                    choices=["classic", "combined", "clean", "testv"],
                     default="clean",
                     help="classic=1280x720@10fps field+panel, "
                          "combined=1920x1080@30fps animated field + TV overlay")
@@ -233,8 +242,15 @@ def main():
         combined = CombinedRenderer(F)
     elif args.renderer == "clean":
         combined = CleanRenderer(F)
+    elif args.renderer == "testv":
+        combined = TestRenderer(F)
     else:
         combined = None
+    if combined is not None and hasattr(combined, "enrich"):
+        try:
+            combined.enrich(state, args.cricbuzz_url)
+        except Exception as ee:
+            print(f"initial enrich failed: {ee}", flush=True)
     print(f"renderer={args.renderer} {prof['w']}x{prof['h']}@{prof['fps']}",
           flush=True)
 
