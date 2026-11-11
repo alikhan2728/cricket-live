@@ -21,6 +21,7 @@ anim_match.resolve_teams / title_team_codes; unknown pieces stay blank.
 Player "photos" are drawn as initials badges (never fake faces).
 """
 
+import functools
 import re
 
 import requests
@@ -47,6 +48,7 @@ BALL_X = (232, 164, 32)
 BALL_N = (56, 64, 84)
 
 
+@functools.lru_cache(maxsize=512)
 def _font(bold, size):
     name = "DejaVuSans-Bold" if bold else "DejaVuSans"
     return ImageFont.truetype(f"/usr/share/fonts/truetype/dejavu/{name}.ttf",
@@ -190,7 +192,7 @@ class TestRenderer:
 
     def __init__(self, F):
         self.F = F
-        self._bg = _make_bg()
+        self._bg = _make_bg().convert("RGBA")
 
     def enrich(self, st, url):
         enrich_state(st, url)
@@ -262,9 +264,10 @@ class TestRenderer:
     # -- main render ------------------------------------------------------
 
     def render(self, st, frame_no):
-        img = self._bg.copy().convert("RGBA")
-        ov = Image.new("RGBA", (OUT_W, OUT_H), (0, 0, 0, 0))
-        d = ImageDraw.Draw(ov)
+        # overlay elements are all opaque: draw straight onto a bg copy
+        # (skips a full-frame alpha composite every frame)
+        img = self._bg.copy()
+        d = ImageDraw.Draw(img)
 
         bat_code, bowl_code = anim_match.resolve_teams(st)
         names = anim_match.TEAM_NAMES
@@ -431,7 +434,7 @@ class TestRenderer:
             if x > 1860:
                 break
 
-        return Image.alpha_composite(img, ov).convert("RGB")
+        return img.convert("RGB")
 
 
 def _demo():
