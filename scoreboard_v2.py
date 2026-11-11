@@ -30,6 +30,24 @@ TEAM_NAMES = {
     "IRE": "IRELAND", "WIW": "WEST INDIES W", "ZIMW": "ZIMBABWE W", "INDW": "INDIA W",
 }
 
+def canon_team_code(code):
+    """Canonicalize a Cricbuzz team code through the full-name map.
+
+    Cricbuzz uses variant codes on different pages ("RSA" vs "SA" for
+    South Africa). Both sides of every comparison must go through this so
+    the renderer never sticks on the wrong innings' score.
+    Returns the canonical short code, or None when unrecognized.
+    """
+    c = str(code or "").strip().upper()
+    full = TEAM_NAMES.get(c)
+    if not full:
+        return None
+    for k, v in TEAM_NAMES.items():
+        if v == full:
+            return k
+    return c
+
+
 RAIN_KEYWORDS = ("rain", "drizzle", "shower", "wet outfield", "stops play",
                  "play stopped", "delayed", "delay", "interrupted")
 
@@ -63,6 +81,32 @@ def _parts(html_seg):
     txt = re.sub(r"\|+", "|", txt)
     return [p.strip() for p in txt.split("|") if p.strip()]
 
+_SCORE_PAT_OLD = (r'<div class="mr-2">([A-Z]{2,5})</div><div><span class="mr-2">'
+                  r'<span>(\d+)</span><span><span class="mx-\[3px\]">-</span>(\d+)'
+                  r'</span></span><span class="mr-2">\(<!-- -->?([\d.]+)<!-- -->?\)</span>')
+# 2026-11 Cricbuzz miniscore markup: runs<span>/wkts</span>, optional declared
+# marker, overs in a following div (absent for completed innings).
+_SCORE_PAT_NEW = (r'<div class="mr-2">([A-Z]{2,5})</div><div class="flex">(\d+)'
+                  r'<span>/<!-- -->(\d+)</span>'
+                  r'(?:<span class="ml-1">d</span>)?'
+                  r'(?:<div class="font-bold text-lg ml-1">\(([\d.]+)\)</div>)?')
+
+
+def _score_hits(seg):
+    """All innings score cards in a miniscore segment, in page order.
+
+    Returns [(code, runs, wkts, overs), ...]; overs is "" when the card
+    does not show one (completed innings in the current markup).
+    """
+    hits = []
+    for pat in (_SCORE_PAT_NEW, _SCORE_PAT_OLD):
+        for m in re.finditer(pat, seg):
+            hits.append((m.start(), m.group(1), m.group(2), m.group(3),
+                         m.group(4) or ""))
+    hits.sort()
+    return [(c, r, w, o) for _, c, r, w, o in hits]
+
+
 def fetch_rich(url):
     """Scrape rich live data from a Cricbuzz live-scores page."""
     r = requests.get(url, headers=UA, timeout=20)
@@ -76,12 +120,9 @@ def fetch_rich(url):
           "win_a": "", "win_a_pct": "", "win_b": "", "win_b_pct": "",
           "batters": [], "bowlers": [], "recent_overs": [], "status": ""}
 
-    score_pat = (r'<div class="mr-2">([A-Z]{2,5})</div><div><span class="mr-2">'
-                 r'<span>(\d+)</span><span><span class="mx-\[3px\]">-</span>(\d+)'
-                 r'</span></span><span class="mr-2">\(<!-- -->?([\d.]+)<!-- -->?\)</span>')
     # Cricbuzz lists the completed 1st-innings score BEFORE the live
     # 2nd-innings score — collect every hit, pick the current one below.
-    score_hits = list(re.finditer(score_pat, seg))
+    score_hits = _score_hits(seg)
     m = re.search(r'CRR:</span><span[^>]*>([\d.]+)</span>', seg)
     if m:
         st["crr"] = m.group(1)
@@ -102,47 +143,84 @@ def fetch_rich(url):
                  "Afghanistan": "AFG", "Zimbabwe": "ZIM", "Ireland": "IRE",
                  "Netherlands": "NED", "Scotland": "SCO", "Namibia": "NAM",
                  "United States": "USA", "Italy": "ITA"}
-    if score_hits:
-        pick = score_hits[0]
-        # Figure out which team is batting NOW from the status text, e.g.
-        # "India need 262 runs" -> IND, "India won by 6 wkts" -> IND.
-        bat = None
-        sm = re.search(r'([A-Za-z ]+?)\s+need \d+ run', st["status"])
-        if sm:
-            bat = NAME2CODE.get(sm.group(1).strip(), sm.group(1).strip()[:3].upper())
-        if not bat:
-            sm = re.search(r'([A-Za-z ]+?)\s+won by', st["status"])
-            if sm:
-                bat = NAME2CODE.get(sm.group(1).strip(), sm.group(1).strip()[:3].upper())
-        if not bat:
-            sm = re.search(r'\b([A-Z]{2,5}) \d+/\d+', st["status"])
-            if sm:
-                bat = sm.group(1)
-        if bat:
-            bat_full = TEAM_NAMES.get(bat, "").upper()
-            matched = False
-            for s in score_hits:
-                if TEAM_NAMES.get(s.group(1), "").upper() == bat_full:
-                    pick = s
-                    matched = True
-                    break
-            if not matched:
-                print(f"innings pick failed for {bat}, falling back to first hit")
-        st["team"], st["runs"], st["wkts"], st["overs"] = \
-            pick.group(1), pick.group(2), pick.group(3), pick.group(4)
+    # --- match identity: which two teams is THIS page about? ---
+    # Parsed BEFORE score-picking so stray score cards from OTHER matches
+    # (sidebar miniscores on Cricbuzz pages) can never be selected.
+    title_teams = set()
     m = re.search(r"<title>(.*?)</title>", html, re.S | re.I)
     if m:
         t = m.group(1).strip()
         # e.g. "| India vs West Indies, 2nd ODI, West Indies tour of India, 2026 ..."
         g = re.search(r"\|\s*([A-Za-z ]+?)\s+vs\s+([A-Za-z ]+?)\s*,", t)
         if g:
-            c1 = NAME2CODE.get(g.group(1).strip(), g.group(1).strip()[:3].upper())
-            c2 = NAME2CODE.get(g.group(2).strip(), g.group(2).strip()[:3].upper())
+            for gname in (g.group(1).strip(), g.group(2).strip()):
+                raw = NAME2CODE.get(gname, gname[:3].upper())
+                c = canon_team_code(raw) or raw
+                title_teams.add(c)
+            c1, c2 = sorted(title_teams)
             st["match_title"] = f"{c1} vs {c2}"
             st["subtitle"] = st["status"] or "Live"
         else:
             st["match_title"] = st["status"] or "Live Cricket"
             st["subtitle"] = ""
+
+    if score_hits:
+        # Only score cards whose team belongs to THIS page's match may be
+        # picked. On a listing page title_teams is empty and every card is
+        # eligible; on a match page, cards from other matches are dropped.
+        eligible = []
+        for s in score_hits:
+            code = canon_team_code(s[0]) or s[0]
+            if not title_teams or code in title_teams:
+                eligible.append((code, s))
+        if not eligible:
+            # Loud failure: every card on the page belongs to a DIFFERENT
+            # match than the page title — refuse to show a wrong score.
+            print("!!! SCOREBOARD MISMATCH: page title is "
+                  f"'{st['match_title']}' but all {len(score_hits)} score card(s) "
+                  "on the page belong to other teams — score NOT updated",
+                  flush=True)
+        else:
+            pick = eligible[0][1]
+            pick_code = eligible[0][0]
+            # Figure out which team is batting NOW from the status text, e.g.
+            # "India need 262 runs" -> IND, "India won by 6 wkts" -> IND.
+            bat = None
+            sm = re.search(r'([A-Za-z ]+?)\s+need \d+ run', st["status"])
+            if sm:
+                bat = NAME2CODE.get(sm.group(1).strip(),
+                                    sm.group(1).strip()[:3].upper())
+            if not bat:
+                sm = re.search(r'([A-Za-z ]+?)\s+won by', st["status"])
+                if sm:
+                    bat = NAME2CODE.get(sm.group(1).strip(),
+                                        sm.group(1).strip()[:3].upper())
+            if not bat:
+                sm = re.search(r'\b([A-Z]{2,5}) \d+/\d+', st["status"])
+                if sm:
+                    bat = sm.group(1)
+            if not bat:
+                # Test statuses: "Sri Lanka trail by 192 runs" / "lead by"
+                sm = re.search(r'([A-Za-z ]+?)\s+(?:trail|lead) by \d+',
+                               st["status"])
+                if sm:
+                    bat = NAME2CODE.get(sm.group(1).strip(),
+                                        sm.group(1).strip()[:3].upper())
+            if bat:
+                bat_code = canon_team_code(bat) or bat
+                matched = False
+                for code, s in eligible:
+                    if code == bat_code:
+                        pick, pick_code = s, code
+                        matched = True
+                        break
+                if not matched:
+                    print("!!! SCOREBOARD WARNING: could not match batting team "
+                          f"'{bat}' (status: {st['status']!r}) to any score card "
+                          f"of this match — showing first eligible card "
+                          f"({pick_code}); verify the Cricbuzz URL", flush=True)
+            st["team"], st["runs"], st["wkts"], st["overs"] = \
+                pick_code, pick[1], pick[2], pick[3]
 
     parts = _parts(seg)
     # batters
