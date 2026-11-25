@@ -108,7 +108,7 @@ jobs:
               did=$(awk -v v="$vid" '$1 == v {print $2}' drive-ids.txt)
               if [ -n "$did" ]; then
                 echo "[$i] trying Drive fallback for $vid ..."
-                gdown --id "$did" -O "$out" || echo "WARN: Drive fallback failed for $vid"
+                gdown "$did" -O "$out" || echo "WARN: Drive fallback failed for $vid"
               fi
             fi
             [ -f "$out" ] || echo "WARN: $vid could not be downloaded — it will be skipped from the playlist"
