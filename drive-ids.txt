@@ -1,0 +1,18 @@
+# Borewell loop live — Google Drive fallback IDs (COMPLETE, 11 of 11)
+# Written 2026-11-25 ~06:40 PKT, completed ~13:33 PKT from ~/workspace/borewell/loop-live/drive-upload.log
+# Format: "<youtube-id> <drive-file-id>" — read by workflow-draft.yml (gdown fallback)
+# 12 M1ozaWDzK2M is the 720p re-encode (730 MB; original 4.3 GB 1080p failed Drive
+# multipart upload twice with Google 500 http2 errors). #01 6nPSoO-WoV8 was never
+# downloaded (YouTube bot-block) and has no Drive copy. All files below are
+# shared publicly (anyone with link, reader) for gdown to fetch them on the runner.
+_-m3x38w3KE 1sDXJnN_86V4GDbjxGjB2T1aJDqFAvvZZ
+vBUEb53S66Y 1nyKnMbo6RMYMaOq-VBlJzf6VBRLGwQHx
+5QrhV8U2pBE 1WcII_rqLzJ2KFBKu7zUuMQIGFTtReJVe
+B9k9YCbIpQk 1E0UU4njk4_CAwtCWBCijUxDnT76UCesd
+o20V0gPlAM8 1i8DEKdTLkMcBAVpSKentJnQ_EbH2MaT9
+TYN54rLbSL4 1gCAf_3nPCupfH0_sct7XoKfPpV5vKyx9
+DOvqKsWWfLI 1XJkC8qbT6RCNsX2pViMHg1GjxA_j9s2E
+yaP25mOZWl4 1dM-EZUhNt1VyV_auvYF2B5tpMsaqrbCL
+vRXkruTxdO4 1z3tHkQnOXXyoE_aUy8M-FIpyc7CX-MVu
+WIGuwzV8wEY 1VBv4ZvyMMLKPTX2hmhCZlHDaJ71LKnNg
+M1ozaWDzK2M 1sngM9AuY1ZEURF06_4PBaClUeOGobVjH
