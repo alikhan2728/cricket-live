@@ -1,0 +1,158 @@
+# Borewell Technology (@BorewellTechnology-m1t) daily loop live: one full playlist per day,
+# 17:00–22:00 PKT (5h, one GitHub Actions run, timeout 355 min).
+# Committed 2026-11-25 (hardened version): yt-dlp clients default→android→ios→tv,
+# Google Drive fallback via drive-ids.txt (public links, gdown), playlist.txt touch fix.
+# First full loop: Wed 25 Nov 2026 17:00 PKT, duration_minutes=300.
+#
+# Adapted from cartoon-live-playlist-DRAFT.yml in ~/workspace/cartoon-live/
+# (itself adapted from the committed cartoon-live.yml) and from
+# live-score-cpt.yml in github.com/alikhan2728/cricket-live.
+#
+# KEY DIFFERENCE vs the cartoon workflow: the 12 borewell videos (~5-6 GB at 1080p)
+# CANNOT be committed to the repo (GitHub rejects files >100 MB), so this workflow
+# DOWNLOADS them fresh on the runner with yt-dlp at the start of each run, then
+# streams the concat playlist. The playlist order file (playlist-day1.txt) IS
+# committed to the repo; the videos are not.
+#
+# SETUP (all done by 2026-11-25):
+#   1. Live streaming ENABLED on Borewell Technology (verified in Studio 23 Nov).
+#   2. Broadcast created in Studio: "🔴 LIVE: Borewell Drilling Marathon |
+#      Non-Stop Water Blast Videos", Public, "Not made for kids", auto-start ON.
+#   3. Stream key saved as repo secret BOREWELL_YT_KEY (24 Nov).
+#   4. This file committed as .github/workflows/borewell-loop-live.yml plus
+#      playlist-day1.txt and drive-ids.txt (repo root).
+#   5. Dispatch manually (Actions → Borewell Loop Live → Run workflow) with
+#      duration_minutes=300 shortly before 17:00 PKT, and verify in
+#      Studio (health Good/Excellent) + on the public watch page before
+#      telling Adnan it is live.
+#
+# DAILY ROTATION: the playlist order rotates so returning viewers see something
+# different. Day 1 order is in playlist-day1.txt. For later days, pass a new
+# comma-separated `order` (video numbers 1-12 as listed in playlist-day1.txt)
+# or commit a playlist-dayN.txt and change the `playlist_file` input.
+#
+# VM NOTE: do NOT run this stream from the VM — VM egress blocks RTMP pushes.
+# The push MUST come from the GitHub Actions runner, as here.
+
+name: Borewell Loop Live
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Stream duration in minutes (313 = full 5h13m playlist, one pass)'
+        required: false
+        default: '313'
+      playlist_file:
+        description: 'ffmpeg concat playlist file in repo (play order; IDs taken from its filenames)'
+        required: false
+        default: 'playlist-day1.txt'
+      order:
+        description: 'Optional override: comma-separated video numbers 1-12 (replaces playlist_file order)'
+        required: false
+        default: ''
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg + yt-dlp
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg unzip
+          pip install -q yt-dlp gdown
+          # JS runtime helps yt-dlp answer YouTube's player challenges
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+
+      - name: Download playlist videos
+        run: |
+          mkdir -p videos
+          # playlist-day1.txt is an ffmpeg concat list; filenames are NN-<youtube-id>.mp4
+          # where NN is the channel number (1-12, see README). Two ID lists:
+          #   all-ids.txt  = IDs in play order (concat file order)
+          #   chan-ids.txt = IDs in channel-number order (sorted by NN prefix)
+          grep -oE "[0-9]{2}-[A-Za-z0-9_-]{11}\.mp4" "${{ inputs.playlist_file }}" | sed -E 's/^([0-9]{2})-([A-Za-z0-9_-]{11})\.mp4$/\1 \2/' > /tmp/nn-ids.txt
+          awk '{print $2}' /tmp/nn-ids.txt > /tmp/all-ids.txt
+          sort -n /tmp/nn-ids.txt | awk '{print $2}' > /tmp/chan-ids.txt
+          if [ -n "${{ inputs.order }}" ]; then
+            # order override: comma-separated CHANNEL numbers 1-12
+            echo "${{ inputs.order }}" | tr ',' '\n' > /tmp/order.txt
+            > /tmp/queue.txt
+            while read -r n; do sed -n "${n}p" /tmp/chan-ids.txt >> /tmp/queue.txt; done < /tmp/order.txt
+            QUEUE=/tmp/queue.txt
+          else
+            QUEUE=/tmp/all-ids.txt
+          fi
+          i=0
+          while read -r vid; do
+            [ -z "$vid" ] && continue
+            i=$((i+1))
+            out="videos/$(printf %02d $i)-${vid}.mp4"
+            echo "[$i] downloading $vid ..."
+            ok=0
+            for client in "" "android" "ios" "tv"; do
+              if [ -z "$client" ]; then args=(); else args=(--extractor-args "youtube:player_client=$client"); fi
+              if yt-dlp --no-update --retries 3 "${args[@]}" \
+                -f "bv*[height<=1080]+ba/b[height<=1080]" \
+                --merge-output-format mp4 -o "$out" \
+                "https://www.youtube.com/watch?v=${vid}"; then ok=1; break; fi
+              echo "WARN: client '${client:-default}' failed for $vid"
+            done
+            if [ "$ok" -eq 0 ] && [ -f drive-ids.txt ]; then
+              # Fallback: Google Drive copy (uploaded from the VM; public link).
+              # drive-ids.txt lines: "<youtube-id> <drive-file-id>"
+              did=$(awk -v v="$vid" '$1 == v {print $2}' drive-ids.txt)
+              if [ -n "$did" ]; then
+                echo "[$i] trying Drive fallback for $vid ..."
+                gdown --id "$did" -O "$out" || echo "WARN: Drive fallback failed for $vid"
+              fi
+            fi
+            [ -f "$out" ] || echo "WARN: $vid could not be downloaded — it will be skipped from the playlist"
+          done < "$QUEUE"
+          ls -lh videos/
+
+      - name: Build concat playlist + verify
+        run: |
+          rm -f playlist.txt
+          touch playlist.txt
+          # Play order = filename order (01..NN). A video whose download failed is
+          # skipped (warned above) instead of failing the whole run.
+          for f in videos/*.mp4; do
+            [ -f "$f" ] || continue
+            ffprobe -hide_banner -v error -show_entries stream=width,height,duration \
+              -of default=noprint_wrappers=1 "$f" > /dev/null
+            echo "file '$PWD/$f'" >> playlist.txt
+            echo "queued: $f"
+          done
+          n=$(wc -l < playlist.txt)
+          echo "PLAYLIST VIDEOS: $n"
+          [ "$n" -gt 0 ] || { echo "ERROR: no videos downloaded — aborting"; exit 1; }
+          echo "--- playlist.txt ---"; cat playlist.txt
+          # total duration (seconds) of one pass
+          python3 -c "
+          import json, subprocess, glob
+          total = 0.0
+          for f in sorted(glob.glob('videos/*.mp4')):
+              out = subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','json',f])
+              total += float(json.loads(out)['format']['duration'])
+          print(f'PLAYLIST TOTAL: {total:.0f}s = {total/60:.1f} min')"
+
+      - name: Stream playlist to YouTube (loop)
+        env:
+          YT_KEY: ${{ secrets.BOREWELL_YT_KEY }}
+        run: |
+          SECONDS=$(( ${{ inputs.duration_minutes }} * 60 ))
+          echo "Streaming Borewell playlist for ${SECONDS}s..."
+          ffmpeg -hide_banner -loglevel warning \
+            -re -stream_loop -1 -f concat -safe 0 -i playlist.txt \
+            -t "$SECONDS" \
+            -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30" \
+            -c:v libx264 -preset veryfast -b:v 2500k -maxrate 3000k -bufsize 6000k \
+            -pix_fmt yuv420p -g 60 -r 30 \
+            -c:a aac -b:a 128k -ar 44100 \
+            -f flv "rtmp://a.rtmp.youtube.com/live2/$YT_KEY"
+          echo "Stream finished."
